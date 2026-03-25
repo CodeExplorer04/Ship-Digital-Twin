@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Ship Digital Twin Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #0f172a; color: white; text-align: center; padding: 20px; }
+  h1 { margin-bottom: 24px; font-size: 1.6rem; }
+
+  .cards {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin-bottom: 30px;
+  }
+  .card {
+    background: #1e293b; padding: 16px 20px; border-radius: 10px;
+    min-width: 160px; flex: 1 1 140px; max-width: 200px;
+  }
+  .card h3 { font-size: 0.8rem; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .card p  { font-size: 1.5rem; font-weight: bold; }
+
+  /* Status badge */
+  #status-badge {
+    display: inline-block; padding: 4px 14px; border-radius: 20px;
+    font-size: 0.85rem; font-weight: bold; margin-bottom: 24px; text-transform: uppercase;
+  }
+  .badge-normal   { background: #166534; color: #bbf7d0; }
+  .badge-warning  { background: #854d0e; color: #fef08a; }
+  .badge-critical { background: #7f1d1d; color: #fca5a5; }
+
+  .charts { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }
+  .chart-box { background: #1e293b; border-radius: 10px; padding: 16px; flex: 1 1 340px; max-width: 500px; }
+  .chart-box h4 { margin-bottom: 10px; font-size: 0.85rem; color: #94a3b8; }
+
+  #timestamp { font-size: 0.75rem; color: #64748b; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<h1>🚢 Ship Digital Twin Dashboard</h1>
+<div id="timestamp">Waiting for data...</div>
+<div id="status-badge" class="badge-normal">--</div>
+
+<div class="cards">
+  <div class="card"><h3>Engine Temp</h3><p id="temp">--</p></div>
+  <div class="card"><h3>RPM</h3><p id="rpm">--</p></div>
+  <div class="card"><h3>Fuel Rate</h3><p id="fuel">--</p></div>
+  <div class="card"><h3>Speed</h3><p id="speed">--</p></div>
+  <div class="card"><h3>Oil Pressure</h3><p id="oil">--</p></div>
+  <div class="card"><h3>Coolant Temp</h3><p id="coolant">--</p></div>
+  <div class="card"><h3>Engine Load</h3><p id="load">--</p></div>
+  <div class="card"><h3>Vibration</h3><p id="vibration">--</p></div>
+  <div class="card"><h3>Weather</h3><p id="weather">--</p></div>
+</div>
+
+<div class="charts">
+  <div class="chart-box"><h4>Fuel Rate (L/h)</h4><canvas id="fuelChart"></canvas></div>
+  <div class="chart-box"><h4>Engine Temp (°C)</h4><canvas id="tempChart"></canvas></div>
+  <div class="chart-box"><h4>RPM</h4><canvas id="rpmChart"></canvas></div>
+  <div class="chart-box"><h4>Speed (knots)</h4><canvas id="speedChart"></canvas></div>
+</div>
+
+<script>
+const MAX_POINTS = 20;
+
+function makeChart(id, label, color) {
+  return new Chart(document.getElementById(id), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{ label, data: [], borderColor: color, backgroundColor: color + '22',
+                   borderWidth: 2, pointRadius: 2, tension: 0.3, fill: true }]
+    },
+    options: {
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#64748b', maxTicksLimit: 6 }, grid: { color: '#1e293b' } },
+        y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } }
+      }
+    }
+  });
+}
+
+const fuelChart  = makeChart('fuelChart',  'Fuel Rate',    '#38bdf8');
+const tempChart  = makeChart('tempChart',  'Engine Temp',  '#f97316');
+const rpmChart   = makeChart('rpmChart',   'RPM',          '#a78bfa');
+const speedChart = makeChart('speedChart', 'Speed',        '#34d399');
+
+function pushPoint(chart, label, value) {
+  chart.data.labels.push(label);
+  chart.data.datasets[0].data.push(value);
+  if (chart.data.labels.length > MAX_POINTS) {
+    chart.data.labels.shift();
+    chart.data.datasets[0].data.shift();
+  }
+  chart.update();
+}
+
+function loadData() {
+  fetch("http://127.0.0.1:5000/ship-data")
+    .then(res => res.json())
+    .then(data => {
+      const t = data.timestamp ? data.timestamp.slice(11, 16) : new Date().toLocaleTimeString();
+
+      document.getElementById("temp").innerText      = data.engine_temp + " °C";
+      document.getElementById("rpm").innerText       = data.rpm;
+      document.getElementById("fuel").innerText      = data.fuel_rate + " L/h";
+      document.getElementById("speed").innerText     = data.speed + " kn";
+      document.getElementById("oil").innerText       = data.oil_pressure + " bar";
+      document.getElementById("coolant").innerText   = data.coolant_temp + " °C";
+      document.getElementById("load").innerText      = data.engine_load + " %";
+      document.getElementById("vibration").innerText = data.vibration + " g";
+      document.getElementById("weather").innerText   = data.weather;
+      document.getElementById("timestamp").innerText = "Last update: " + data.timestamp;
+
+      // Status badge
+      const badge = document.getElementById("status-badge");
+      badge.innerText = data.status;
+      badge.className = "badge-" + (data.status === "normal" ? "normal" : data.status === "warning" ? "warning" : "critical");
+
+      pushPoint(fuelChart,  t, data.fuel_rate);
+      pushPoint(tempChart,  t, data.engine_temp);
+      pushPoint(rpmChart,   t, data.rpm);
+      pushPoint(speedChart, t, data.speed);
+    })
+    .catch(() => {
+      document.getElementById("timestamp").innerText = "⚠️ Cannot reach Flask server at http://127.0.0.1:5000";
+    });
+}
+
+loadData();
+setInterval(loadData, 2000);
+</script>
+</body>
+</html>
